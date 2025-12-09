@@ -5,6 +5,8 @@
     <!-- Разрешения для доступа к интернету -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Разрешение для показа нотификаций (Android 13+ требует runtime запрос) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
