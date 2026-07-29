@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
         // Настройка канала уведомлений и WebView
         createNotificationChannel()
         checkNotificationPermission()
+        startNotificationService()
         setupWebView()
         
         // Обработка Intent для открытия URL
@@ -49,7 +50,8 @@ class MainActivity : AppCompatActivity() {
         webView.settings.setSupportZoom(true)
         webView.settings.builtInZoomControls = true
         webView.settings.displayZoomControls = false
-        
+        webView.settings.javaScriptCanOpenWindowsAutomatically = true
+
         // Отключение определения устройства как мобильного
         webView.settings.useWideViewPort = true
         webView.settings.loadWithOverviewMode = true
@@ -57,6 +59,9 @@ class MainActivity : AppCompatActivity() {
         // Эмуляция десктопного User-Agent
         webView.settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         
+        // Регистрируем JS-интерфейс
+        webView.addJavascriptInterface(WebAppInterface(this, CHANNEL_ID), "Android")
+
         // Настройка WebViewClient для обработки навигации и инъекции JS
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
@@ -68,7 +73,11 @@ class MainActivity : AppCompatActivity() {
                 if (url != null) {
                     // Обработка кастомной схемы max://
                     if (url.startsWith("max://")) {
-                        val maxUrl = url.replace("max://", "https://web.max.ru/")
+                        val maxUrl = if (url.startsWith("max://max.ru/")) {
+                            url.replace("max://max.ru/", "https://web.max.ru/")
+                        } else {
+                            url.replace("max://", "https://web.max.ru/")
+                        }
                         webView.loadUrl(maxUrl)
                         return true
                     } else if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -91,11 +100,6 @@ class MainActivity : AppCompatActivity() {
                 super.onPageFinished(view, url)
                 try {
                     if (url != null && url.contains("web.max.ru")) {
-                        // Регистрируем JS-интерфейс только для доверенного домена
-                        try {
-                            view?.addJavascriptInterface(WebAppInterface(this@MainActivity, CHANNEL_ID), "Android")
-                        } catch (_: Exception) {
-                        }
                         injectNotificationHook(view)
                     }
                 } catch (_: Exception) {
@@ -110,7 +114,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun injectNotificationHook(view: WebView?) {
-        val js = "(function(){if(window.__androidNotificationHookInstalled) return;window.__androidNotificationHookInstalled=true;var OriginalNotification=window.Notification;function AndroidNotification(title,options){try{var body=(options&&options.body)?options.body:'';var icon=(options&&options.icon)?options.icon:'';if(window.Android&&window.Android.postNotification){window.Android.postNotification(title||'',body,icon);} }catch(e){} return new OriginalNotification(title,options);} AndroidNotification.permission=OriginalNotification.permission;AndroidNotification.requestPermission=function(cb){if(cb){OriginalNotification.requestPermission(function(p){cb(p);});}return OriginalNotification.requestPermission();};AndroidNotification.prototype=OriginalNotification.prototype;window.Notification=AndroidNotification;})();"
+        val js = """
+            (function() {
+                if (window.__androidNotificationHookInstalled) return;
+                window.__androidNotificationHookInstalled = true;
+                var OriginalNotification = window.Notification;
+                function AndroidNotification(title, options) {
+                    try {
+                        var body = (options && options.body) ? options.body : '';
+                        var icon = (options && options.icon) ? options.icon : '';
+                        if (window.Android && window.Android.postNotification) {
+                            window.Android.postNotification(title || '', body, icon);
+                        }
+                    } catch (e) {}
+                    if (OriginalNotification) {
+                        return new OriginalNotification(title, options);
+                    } else {
+                        return { close: function() {}, onclick: null, onclose: null, onerror: null, onshow: null };
+                    }
+                }
+                AndroidNotification.permission = 'granted';
+                AndroidNotification.requestPermission = function(cb) {
+                    if (cb) { setTimeout(function() { cb('granted'); }, 0); }
+                    return Promise.resolve('granted');
+                };
+                if (OriginalNotification) { AndroidNotification.prototype = OriginalNotification.prototype; }
+                window.Notification = AndroidNotification;
+                if (navigator.permissions && navigator.permissions.query) {
+                    var originalQuery = navigator.permissions.query;
+                    navigator.permissions.query = function(q) {
+                        if (q && q.name === 'notifications') {
+                            return Promise.resolve({ state: 'granted', onchange: null });
+                        }
+                        return originalQuery.call(navigator.permissions, q);
+                    };
+                }
+            })();
+        """.trimIndent()
         try {
             view?.evaluateJavascript(js, null)
         } catch (_: Exception) {
@@ -151,12 +191,21 @@ class MainActivity : AppCompatActivity() {
         if (Intent.ACTION_VIEW == action && data != null) {
             if (data.startsWith("max://")) {
                 // Преобразуем max:// в https://web.max.ru/
-                val maxUrl = data.replace("max://", "https://web.max.ru/")
+                val maxUrl = if (data.startsWith("max://max.ru/")) {
+                    data.replace("max://max.ru/", "https://web.max.ru/")
+                } else {
+                    data.replace("max://", "https://web.max.ru/")
+                }
                 webView.loadUrl(maxUrl)
             } else {
                 webView.loadUrl(data)
             }
         }
+    }
+    
+    private fun startNotificationService() {
+        val serviceIntent = Intent(this, WebNotificationService::class.java)
+        ContextCompat.startForegroundService(this, serviceIntent)
     }
     
     private fun setupOnBackPressed() {
@@ -166,7 +215,8 @@ class MainActivity : AppCompatActivity() {
                 if (webView.canGoBack()) {
                     webView.goBack()
                 } else {
-                    finish() // Закрываем приложение, если нельзя вернуться назад
+                    // Вместо завершения работы приложения, сворачиваем его
+                    moveTaskToBack(true)
                 }
             }
         })

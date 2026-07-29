@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Разрешение для показа нотификаций (Android 13+ требует runtime запрос) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:allowBackup="true"
@@ -34,6 +36,15 @@
                 <data android:scheme="max" android:host="max.ru" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".WebNotificationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeping WebView alive for background notifications from web.max.ru" />
+        </service>
     </application>
 
 </manifest>

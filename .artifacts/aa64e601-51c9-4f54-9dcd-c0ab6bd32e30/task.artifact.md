@@ -1,0 +1,8 @@
+- [x] Add Foreground Service permissions and declare Service in `AndroidManifest.xml`
+- [x] Add service-related strings to `strings.xml`
+- [x] Implement `WebNotificationService.kt`
+- [x] Update `MainActivity.kt`:
+    - [x] Start Foreground Service in `onCreate`
+    - [x] Fix `max://` scheme URL mapping
+    - [x] Update `onBackPressed` to minimize app
+- [x] Verify build and functionality
